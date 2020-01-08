@@ -8700,6 +8700,10 @@ void ofdmframesync_destroy(ofdmframesync _q);
 void ofdmframesync_print(ofdmframesync _q);
 void ofdmframesync_reset(ofdmframesync _q);
 int  ofdmframesync_is_frame_open(ofdmframesync _q);
+int  ofdmframesync_is_synced(ofdmframesync _q);
+int  ofdmframesync_find_data_start(ofdmframesync _q,
+                           	       float complex * _x,
+								   unsigned int _n);
 void ofdmframesync_execute(ofdmframesync _q,
                            liquid_float_complex * _x,
                            unsigned int _n);

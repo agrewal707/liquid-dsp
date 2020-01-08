@@ -373,9 +373,65 @@ int ofdmframesync_is_frame_open(ofdmframesync _q)
     return (_q->state == OFDMFRAMESYNC_STATE_SEEKPLCP) ? 0 : 1;
 }
 
-int ofdmframesync_execute(ofdmframesync   _q,
-                          float complex * _x,
-                          unsigned int    _n)
+int ofdmframesync_is_synced(ofdmframesync _q)
+{
+    return (_q->state == OFDMFRAMESYNC_STATE_RXSYMBOLS) ? 1 : 0;
+
+}
+// searches the sync sequence and returns a pointer to the start
+// of the first data symbol if sync was successful
+int ofdmframesync_find_data_start(ofdmframesync _q,
+                           	      float complex * _x,
+								                  unsigned int _n)
+{
+    unsigned int i;
+    float complex x;
+    for (i=0; i<_n; i++) {
+        x = _x[i];
+
+        // correct for carrier frequency offset
+        if (_q->state != OFDMFRAMESYNC_STATE_SEEKPLCP) {
+            nco_crcf_mix_down(_q->nco_rx, x, &x);
+            nco_crcf_step(_q->nco_rx);
+        }
+
+        // save input sample to buffer
+        windowcf_push(_q->input_buffer,x);
+
+#if DEBUG_OFDMFRAMESYNC
+        if (_q->debug_enabled) {
+            windowcf_push(_q->debug_x, x);
+            windowf_push(_q->debug_rssi, crealf(x)*crealf(x) + cimagf(x)*cimagf(x));
+        }
+#endif
+
+        switch (_q->state) {
+        case OFDMFRAMESYNC_STATE_SEEKPLCP:
+            ofdmframesync_execute_seekplcp(_q);
+            break;
+        case OFDMFRAMESYNC_STATE_PLCPSHORT0:
+            ofdmframesync_execute_S0a(_q);
+            break;
+        case OFDMFRAMESYNC_STATE_PLCPSHORT1:
+            ofdmframesync_execute_S0b(_q);
+            break;
+        case OFDMFRAMESYNC_STATE_PLCPLONG:
+            ofdmframesync_execute_S1(_q);
+            break;
+        case OFDMFRAMESYNC_STATE_RXSYMBOLS:
+            return i;
+            break;
+        default:;
+        }
+
+    } // for (i=0; i<_n; i++)
+    // sync is not complete, return NULL.
+    return -1;
+} // ofdmframesync_execute()
+
+void ofdmframesync_execute(ofdmframesync _q,
+                           float complex * _x,
+                           unsigned int _n)
 {
     unsigned int i;
     float complex x;
