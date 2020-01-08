@@ -302,6 +302,41 @@ int ofdmframegen_writesymbol(ofdmframegen    _q,
     return ofdmframegen_gensymbol(_q, _y);
 }
 
+// write OFDM symbol
+//  _q      :   framing generator object
+//  _x      :   input symbols, [size: _M x 1]
+//  _y      :   output samples, [size: _M x 1]
+void ofdmframegen_writesymbol_nopilot(ofdmframegen    _q,
+                                      float complex * _x,
+                                      float complex * _y)
+{
+    // move frequency data to internal buffer
+    unsigned int i;
+    unsigned int k;
+    int sctype;
+    for (i=0; i<_q->M; i++) {
+        // start at mid-point (effective fftshift)
+        k = (i + _q->M/2) % _q->M;
+
+        sctype = _q->p[k];
+        if (sctype==OFDMFRAME_SCTYPE_NULL) {
+            // disabled subcarrier
+            _q->X[k] = 0.0f;
+        } else {
+            // data subcarrier (or pilot, which is used as data here)
+            _q->X[k] = _x[k] * _q->g_data;
+        }
+
+        //printf("X[%3u] = %12.8f + j*%12.8f;\n",i+1,crealf(_q->X[i]),cimagf(_q->X[i]));
+    }
+
+    // execute transform
+    FFT_EXECUTE(_q->ifft);
+
+    // copy result to output, adding cyclic prefix and tapering window
+    ofdmframegen_gensymbol(_q, _y);
+}
+
 // write tail to output
 int ofdmframegen_writetail(ofdmframegen    _q,
                            float complex * _buffer)

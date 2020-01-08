@@ -94,7 +94,10 @@ struct ofdmframesync_s {
     msequence ms_pilot;     // pilot sequence generator
     float phi_prime;        // ...
     float p1_prime;         // filtered pilot phase slope
-
+    float g_prime;			// last gain estimated from pilots
+    float g1_prime;			// last gain slope estimated from pilots
+    unsigned int first_pilots_received;	// set if pilots have been received in previous symbols
+    unsigned int last_pilot;// index of last symbol that contained pilots
 #if OFDMFRAMESYNC_ENABLE_SQUELCH
     // coarse signal detection
     float squelch_threshold;
@@ -207,6 +210,16 @@ ofdmframesync ofdmframesync_create(unsigned int           _M,
     q->G   = (float complex*) malloc((q->M)*sizeof(float complex));
     q->B   = (float complex*) malloc((q->M)*sizeof(float complex));
     q->R   = (float complex*) malloc((q->M)*sizeof(float complex));
+
+    // phase offset
+    q->phi_prime = 0.0f;
+    q->p1_prime = 0.0f;
+    q->first_pilots_received = 0;
+    q->last_pilot = 0;
+
+    // gain coefficients estimated from pilots
+    q->g_prime = 1.0f;
+    q->g1_prime = 0.0f;
 
 #if 1
     memset(q->G0a, 0x00, q->M*sizeof(float complex));
@@ -339,6 +352,12 @@ int ofdmframesync_reset(ofdmframesync _q)
     _q->s_hat_1 = 0.0f;
     _q->phi_prime = 0.0f;
     _q->p1_prime = 0.0f;
+    _q->first_pilots_received = 0;
+    _q->last_pilot = 0;
+
+    // reset gain coefficients estimated from pilots
+    _q->g_prime = 1.0f;
+    _q->g1_prime = 0.0f;
 
     // set thresholds (increase for small number of subcarriers)
     _q->plcp_detect_thresh = (_q->M > 44) ? 0.35f : 0.35f + 0.01f*(44 - _q->M);
@@ -400,6 +419,53 @@ int ofdmframesync_execute(ofdmframesync   _q,
 
     } // for (i=0; i<_n; i++)
     return LIQUID_OK;
+} // ofdmframesync_execute()
+
+void ofdmframesync_execute_nopilot(ofdmframesync _q,
+                                   float complex * _x,
+                                   unsigned int _n)
+{
+    unsigned int i;
+    float complex x;
+    for (i=0; i<_n; i++) {
+        x = _x[i];
+
+        // correct for carrier frequency offset
+        if (_q->state != OFDMFRAMESYNC_STATE_SEEKPLCP) {
+            nco_crcf_mix_down(_q->nco_rx, x, &x);
+            nco_crcf_step(_q->nco_rx);
+        }
+
+        // save input sample to buffer
+        windowcf_push(_q->input_buffer,x);
+
+#if DEBUG_OFDMFRAMESYNC
+        if (_q->debug_enabled) {
+            windowcf_push(_q->debug_x, x);
+            windowf_push(_q->debug_rssi, crealf(x)*crealf(x) + cimagf(x)*cimagf(x));
+        }
+#endif
+
+        switch (_q->state) {
+        case OFDMFRAMESYNC_STATE_SEEKPLCP:
+            ofdmframesync_execute_seekplcp(_q);
+            break;
+        case OFDMFRAMESYNC_STATE_PLCPSHORT0:
+            ofdmframesync_execute_S0a(_q);
+            break;
+        case OFDMFRAMESYNC_STATE_PLCPSHORT1:
+            ofdmframesync_execute_S0b(_q);
+            break;
+        case OFDMFRAMESYNC_STATE_PLCPLONG:
+            ofdmframesync_execute_S1(_q);
+            break;
+        case OFDMFRAMESYNC_STATE_RXSYMBOLS:
+            ofdmframesync_execute_rxsymbols_nopilot(_q);
+            break;
+        default:;
+        }
+
+    } // for (i=0; i<_n; i++)
 } // ofdmframesync_execute()
 
 // get receiver RSSI
@@ -756,6 +822,45 @@ int ofdmframesync_execute_rxsymbols(ofdmframesync _q)
     return LIQUID_OK;
 }
 
+void ofdmframesync_execute_rxsymbols_nopilot(ofdmframesync _q)
+{
+    // wait for timeout
+    _q->timer--;
+
+    if (_q->timer == 0) {
+
+        // run fft
+        float complex * rc;
+        windowcf_read(_q->input_buffer, &rc);
+        memmove(_q->x, &rc[_q->cp_len-_q->backoff], (_q->M)*sizeof(float complex));
+        FFT_EXECUTE(_q->fft);
+
+        // recover symbol in internal _q->X buffer
+        ofdmframesync_rxsymbol_nopilot(_q);
+
+#if DEBUG_OFDMFRAMESYNC
+        if (_q->debug_enabled) {
+            unsigned int i;
+            for (i=0; i<_q->M; i++) {
+                if (_q->p[i] == OFDMFRAME_SCTYPE_DATA)
+                    windowcf_push(_q->debug_framesyms, _q->X[i]);
+            }
+        }
+#endif
+        // invoke callback
+        if (_q->callback != NULL) {
+            int retval = _q->callback(_q->X, _q->p, _q->M, _q->userdata);
+
+            if (retval != 0)
+                ofdmframesync_reset(_q);
+        }
+
+        // reset timer
+        _q->timer = _q->M + _q->cp_len;
+    }
+
+}
+
 // compute S0 metrics
 int ofdmframesync_S0_metrics(ofdmframesync _q,
                              float complex * _G,
@@ -998,10 +1103,12 @@ int ofdmframesync_rxsymbol(ofdmframesync _q)
     for (i=0; i<_q->M; i++)
         _q->X[i] *= _q->R[i];
 
-    // polynomial curve-fit
-    float x_phase[_q->M_pilot];
+    // polynomial curve-fit for phase and gain
+    float x_polyfit[_q->M_pilot];
     float y_phase[_q->M_pilot];
     float p_phase[2];
+    float y_gain[_q->M_pilot];
+    float p_gain[2];
 
     unsigned int n=0;
     unsigned int k;
@@ -1023,9 +1130,9 @@ int ofdmframesync_rxsymbol(ofdmframesync _q)
                     crealf(pilot),    cimagf(pilot));
 #endif
             // store resulting...
-            x_phase[n] = (k > _q->M2) ? (float)k - (float)(_q->M) : (float)k;
+            x_polyfit[n] = (k > _q->M2) ? (float)k - (float)(_q->M) : (float)k;
             y_phase[n] = cargf(_q->X[k]*conjf(pilot));
-
+            y_gain[n] = cabs(_q->X[k]);
             // update counter
             n++;
 
@@ -1044,17 +1151,25 @@ int ofdmframesync_rxsymbol(ofdmframesync _q)
     }
 
     // fit phase to 1st-order polynomial (2 coefficients)
-    polyf_fit(x_phase, y_phase, _q->M_pilot, p_phase, 2);
+    polyf_fit(x_polyfit, y_phase, _q->M_pilot, p_phase, 2);
+
+    // fit gain to 1st-order polynomial
+    polyf_fit(x_polyfit, y_gain, _q->M_pilot, p_gain, 2);
 
     // filter slope estimate (timing offset)
     float alpha = 0.3f;
     p_phase[1] = alpha*p_phase[1] + (1-alpha)*_q->p1_prime;
     _q->p1_prime = p_phase[1];
 
+    // store gain coefficients
+    // todo: apply filter?
+    _q->g_prime = p_gain[0];
+    _q->g1_prime = p_gain[1];
+
 #if DEBUG_OFDMFRAMESYNC
     if (_q->debug_enabled) {
         // save pilots
-        memmove(_q->px, x_phase, _q->M_pilot*sizeof(float));
+        memmove(_q->px, x_polyfit, _q->M_pilot*sizeof(float));
         memmove(_q->py, y_phase, _q->M_pilot*sizeof(float));
 
         // NOTE : swapping values for octave
@@ -1066,7 +1181,7 @@ int ofdmframesync_rxsymbol(ofdmframesync _q)
     }
 #endif
 
-    // compensate for phase offset
+    // compensate for phase offset and gain
     // TODO : find more computationally efficient way to do this
     for (i=0; i<_q->M; i++) {
         // only apply to data/pilot subcarriers
@@ -1075,24 +1190,77 @@ int ofdmframesync_rxsymbol(ofdmframesync _q)
         } else {
             float fx    = (i > _q->M2) ? (float)i - (float)(_q->M) : (float)i;
             float theta = polyf_val(p_phase, 2, fx);
-            _q->X[i] *= liquid_cexpjf(-theta);
+            float g = polyf_val(p_gain, 2, fx);
+            _q->X[i] *= liquid_cexpjf(-theta)/g;
         }
     }
 
     // adjust NCO frequency based on differential phase
-    if (_q->num_symbols > 0) {
+    if (_q->first_pilots_received) {
         // compute phase error (unwrapped)
         float dphi_prime = p_phase[0] - _q->phi_prime;
         while (dphi_prime >  M_PI) dphi_prime -= 2.0*M_PI;
         while (dphi_prime < -M_PI) dphi_prime += 2.0*M_PI;
 
-        // adjust NCO proportionally to phase error
-        nco_crcf_adjust_frequency(_q->nco_rx, 1e-3f*dphi_prime);
+        // adjust NCO
+        // it is the phase difference divided by the number of
+        // symbols received in the period
+        // also apply filter: y[k] = y[k-1] + alpha*(x[k]-y[k-1])
+        float cfo_correction = dphi_prime/(_q->num_symbols - _q->last_pilot);
+        cfo_correction /= _q->M;
+        cfo_correction *= 0.8; //alpha
+        nco_crcf_adjust_frequency(_q->nco_rx, cfo_correction);
     }
     // set internal phase state
     _q->phi_prime = p_phase[0];
     //printf("%3u : theta : %12.8f, nco freq: %12.8f\n", _q->num_symbols, p_phase[0], nco_crcf_get_frequency(_q->nco_rx));
     
+    // increment symbol counter
+    _q->last_pilot = _q->num_symbols;
+    _q->num_symbols++;
+    _q->first_pilots_received = 1;
+
+#if 0
+    for (i=0; i<_q->M_pilot; i++)
+        printf("x_phase(%3u) = %12.8f; y_phase(%3u) = %12.8f;\n", i+1, x_phase[i], i+1, y_phase[i]);
+    printf("poly : p0=%12.8f, p1=%12.8f\n", p_phase[0], p_phase[1]);
+#endif
+}
+
+// recover symbol, correcting for gain, pilot phase, etc. without using
+// any pilot symbols. Instead the phase estimates from the previous symbols are used.
+void ofdmframesync_rxsymbol_nopilot(ofdmframesync _q)
+{
+    // apply gain
+    unsigned int i;
+    for (i=0; i<_q->M; i++)
+        _q->X[i] *= _q->R[i];
+
+    // polynomial curve-fit
+    float p_phase[2];
+    float p_gain[2];
+
+    // use old phase and gain estimates for compensation
+    p_phase[0] = _q->phi_prime;
+    p_phase[1] = _q->p1_prime;
+    p_gain[0] = _q->g_prime;
+    p_gain[1] = _q->g1_prime;
+
+    // compensate for phase offset and gain
+    // TODO : find more computationally efficient way to do this
+    for (i=0; i<_q->M; i++) {
+        // only apply to data/pilot subcarriers
+        if (_q->p[i] == OFDMFRAME_SCTYPE_NULL) {
+            _q->X[i] = 0.0f;
+        } else {
+            float fx    = (i > _q->M2) ? (float)i - (float)(_q->M) : (float)i;
+            float theta = polyf_val(p_phase, 2, fx);
+            float g = polyf_val(p_gain, 2, fx);
+            _q->X[i] *= liquid_cexpjf(-theta)/g;
+        }
+    }
+    //printf("%3u : theta : %12.8f, nco freq: %12.8f\n", _q->num_symbols, p_phase[0], nco_crcf_get_frequency(_q->nco_rx));
+
     // increment symbol counter
     _q->num_symbols++;
 
