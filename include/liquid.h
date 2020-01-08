@@ -8256,6 +8256,11 @@ int ofdmframegen_writesymbol(ofdmframegen _q,
                              liquid_float_complex * _x,
                              liquid_float_complex *_y);
 
+// write data symbol, considering pilot allocation as data subcarriers
+void ofdmframegen_writesymbol_nopilot(ofdmframegen _q,
+                              liquid_float_complex * _x,
+                              liquid_float_complex *_y);
+
 // write tail
 int ofdmframegen_writetail(ofdmframegen _q,
                            liquid_float_complex * _x);
@@ -8282,13 +8287,16 @@ ofdmframesync ofdmframesync_create(unsigned int           _M,
                                    unsigned char *        _p,
                                    ofdmframesync_callback _callback,
                                    void *                 _userdata);
-int ofdmframesync_destroy(ofdmframesync _q);
-int ofdmframesync_print(ofdmframesync _q);
-int ofdmframesync_reset(ofdmframesync _q);
-int ofdmframesync_is_frame_open(ofdmframesync _q);
-int ofdmframesync_execute(ofdmframesync _q,
-                          liquid_float_complex * _x,
-                          unsigned int _n);
+void ofdmframesync_destroy(ofdmframesync _q);
+void ofdmframesync_print(ofdmframesync _q);
+void ofdmframesync_reset(ofdmframesync _q);
+int  ofdmframesync_is_frame_open(ofdmframesync _q);
+void ofdmframesync_execute(ofdmframesync _q,
+                           liquid_float_complex * _x,
+                           unsigned int _n);
+void ofdmframesync_execute_nopilot(ofdmframesync _q,
+                           liquid_float_complex * _x,
+                           unsigned int _n);
 
 // query methods
 float ofdmframesync_get_rssi(ofdmframesync _q); // received signal strength indication
