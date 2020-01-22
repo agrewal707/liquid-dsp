@@ -229,7 +229,7 @@ ofdmframesync ofdmframesync_create(unsigned int           _M,
 #endif
 
     // timing backoff
-    q->backoff = q->cp_len < 2 ? q->cp_len : 2;
+    q->backoff = 0; //Disable backoff. q->cp_len < 2 ? q->cp_len : 2;
     float phi = (float)(q->backoff)*2.0f*M_PI/(float)(q->M);
     unsigned int i;
     for (i=0; i<q->M; i++)
