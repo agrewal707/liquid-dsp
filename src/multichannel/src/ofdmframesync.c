@@ -34,7 +34,7 @@
 
 #include "liquid.internal.h"
 
-#define DEBUG_OFDMFRAMESYNC             1
+#define DEBUG_OFDMFRAMESYNC             0
 #define DEBUG_OFDMFRAMESYNC_PRINT       0
 #define DEBUG_OFDMFRAMESYNC_FILENAME    "ofdmframesync_internal_debug.m"
 #define DEBUG_OFDMFRAMESYNC_BUFFER_LEN  (2048)
@@ -278,7 +278,16 @@ ofdmframesync ofdmframesync_create(unsigned int           _M,
     return q;
 }
 
-int ofdmframesync_destroy(ofdmframesync _q)
+// Change the callback of the sync object
+void ofdmframesync_set_cb(ofdmframesync _q,
+						              ofdmframesync_callback cb,
+						              void* userdata)
+{
+	_q->callback = cb;
+	_q->userdata = userdata;
+}
+
+void ofdmframesync_destroy(ofdmframesync _q)
 {
 #if DEBUG_OFDMFRAMESYNC
     // destroy debugging objects
@@ -368,6 +377,13 @@ int ofdmframesync_reset(ofdmframesync _q)
     return LIQUID_OK;
 }
 
+// reset the msequence used for pilot generation
+// cfo, phase offset and sync state variables wont be changed
+void ofdmframesync_reset_msequence(ofdmframesync _q)
+{
+	msequence_reset(_q->ms_pilot);
+}
+
 int ofdmframesync_is_frame_open(ofdmframesync _q)
 {
     return (_q->state == OFDMFRAMESYNC_STATE_SEEKPLCP) ? 0 : 1;
@@ -419,13 +435,16 @@ int ofdmframesync_find_data_start(ofdmframesync _q,
             ofdmframesync_execute_S1(_q);
             break;
         case OFDMFRAMESYNC_STATE_RXSYMBOLS:
-            return i;
+        	return i;
             break;
         default:;
         }
 
     } // for (i=0; i<_n; i++)
-    // sync is not complete, return NULL.
+    // edge case if sync was achieved with the last symbol
+    if (_q->state == OFDMFRAMESYNC_STATE_RXSYMBOLS)
+    	return _n;
+    // sync is not complete, return -1.
     return -1;
 } // ofdmframesync_execute()
 
@@ -1264,7 +1283,7 @@ int ofdmframesync_rxsymbol(ofdmframesync _q)
         // also apply filter: y[k] = y[k-1] + alpha*(x[k]-y[k-1])
         float cfo_correction = dphi_prime/(_q->num_symbols - _q->last_pilot);
         cfo_correction /= _q->M;
-        cfo_correction *= 0.8; //alpha
+        cfo_correction *= 0.1; //alpha
         nco_crcf_adjust_frequency(_q->nco_rx, cfo_correction);
     }
     // set internal phase state

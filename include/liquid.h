@@ -8288,8 +8288,12 @@ ofdmframesync ofdmframesync_create(unsigned int           _M,
                                    ofdmframesync_callback _callback,
                                    void *                 _userdata);
 void ofdmframesync_destroy(ofdmframesync _q);
+void ofdmframesync_set_cb(ofdmframesync _q,
+						  ofdmframesync_callback cb,
+						  void* userdata);
 void ofdmframesync_print(ofdmframesync _q);
 void ofdmframesync_reset(ofdmframesync _q);
+void ofdmframesync_reset_msequence(ofdmframesync _q);
 int  ofdmframesync_is_frame_open(ofdmframesync _q);
 int  ofdmframesync_is_synced(ofdmframesync _q);
 int  ofdmframesync_find_data_start(ofdmframesync _q,
