@@ -384,6 +384,18 @@ void ofdmframesync_reset_msequence(ofdmframesync _q)
 	msequence_reset(_q->ms_pilot);
 }
 
+// reset ofdmframesync without resetting sync state and
+// the gathered timing parameters.
+// to be used after ofdmframesync object was not used for
+// some time.
+void ofdmframesync_reset_soft(ofdmframesync _q)
+{
+	msequence_reset(_q->ms_pilot);
+	_q->first_pilots_received = 0;
+	_q->p1_prime = 0;
+	_q->phi_prime = 0;
+}
+
 int ofdmframesync_is_frame_open(ofdmframesync _q)
 {
     return (_q->state == OFDMFRAMESYNC_STATE_SEEKPLCP) ? 0 : 1;
