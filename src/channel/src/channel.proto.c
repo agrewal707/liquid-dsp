@@ -55,6 +55,16 @@ struct CHANNEL(_s) {
     IIRFILT()       shadowing_filter;   // shadowing filter object
     float           shadowing_std;      // shadowing standard deviation
     float           shadowing_fd;       // shadowing Doppler frequency
+
+    // rayleigh flat fading
+    int enabled_rayleigh;				// enable rayleigh?
+    int rayleigh_M;						// number of scatter components
+    unsigned int rayleigh_t;			// current time index
+    float* rayleigh_an;					// cos coefficients for jakes model
+    float* rayleigh_bn;					// sin coefficients
+    float* rayleigh_wn;					// doppler shift coefficients
+    unsigned int rayleigh_R;			// sampling rate
+    unsigned int rayleigh_fd;			// max doppler shift
 };
 
 // create structured channel object with default parameters
@@ -67,6 +77,7 @@ CHANNEL() CHANNEL(_create)(void)
     q->enabled_carrier   = 0;
     q->enabled_multipath = 0;
     q->enabled_shadowing = 0;
+    q->enabled_rayleigh = 0;
 
     // create internal objects
     q->nco              = NCO(_create)(LIQUID_VCO);
@@ -75,6 +86,9 @@ CHANNEL() CHANNEL(_create)(void)
     q->h[0]             = 1.0f;
     q->channel_filter   = FIRFILT(_create)(q->h, q->h_len);
     q->shadowing_filter = NULL;
+    q->rayleigh_an = NULL;
+    q->rayleigh_bn = NULL;
+    q->rayleigh_wn = NULL;
 
     // return object
     return q;
@@ -116,6 +130,10 @@ int CHANNEL(_destroy)(CHANNEL() _q)
         IIRFILT(_destroy)(_q->shadowing_filter);
     free(_q->h);
 
+    free(_q->rayleigh_an);
+    free(_q->rayleigh_bn);
+    free(_q->rayleigh_wn);
+
     // free main object memory
     free(_q);
     return LIQUID_OK;
@@ -129,6 +147,7 @@ int CHANNEL(_print)(CHANNEL() _q)
     if (_q->enabled_carrier)    printf("  carrier:   dphi=%.3f, phi=%.3f\n", _q->dphi, _q->phi);
     if (_q->enabled_multipath)  printf("  multipath: h_len=%u\n", _q->h_len);
     if (_q->enabled_shadowing)  printf("  shadowing: std=%.3fdB, fd=%.3f\n", _q->shadowing_std, _q->shadowing_fd);
+    if (_q->enabled_rayleigh)	  printf("  rayleigh:  M=%d, fd=%.3f\n",_q->rayleigh_M,_q->rayleigh_wn[0]);
     return LIQUID_OK;
 }
 
@@ -151,6 +170,39 @@ int CHANNEL(_add_awgn)(CHANNEL() _q,
     _q->nstd  = powf(10.0f, _noise_floor/20.0f);
     _q->gamma = powf(10.0f, (_q->snr+_q->noise_floor)/20.0f);
     return LIQUID_OK;
+}
+
+// apply rayleigh flat fading model
+// use Jakes sum of sinusoids technique
+// _fd				: maximum doppler shift in Hz
+// _R				: sampling rate R
+// _M				: number of scatterers (1..32) (Jakes used 8)
+void CHANNEL(_add_rayleigh_flat)(CHANNEL() _q,
+								   unsigned int _fd,
+								   unsigned int _R,
+								   unsigned int _M)
+{
+    if (_M > 32) {
+        fprintf(stderr,"warning: channel_%s_add_rayleigh_flat() maximum number of scatterers is 32!\n", EXTENSION_FULL);
+        _M=32;
+    }
+
+	_q->enabled_rayleigh = 1;
+
+	_q->rayleigh_M = _M;
+	_q->rayleigh_t = 0;
+	_q->rayleigh_R = _R;
+	_q->rayleigh_fd = 2*M_PI*_fd;
+
+	_q->rayleigh_an = malloc(_M*sizeof(float));
+	_q->rayleigh_bn = malloc(_M*sizeof(float));
+	_q->rayleigh_wn = malloc(_M*sizeof(float));
+
+	for (int n=0; n<_M; n++) {
+		_q->rayleigh_an[n] = cos(M_PI*(n+1)/(_M+1));
+		_q->rayleigh_bn[n] = sin(M_PI*(n+1)/(_M+1));
+		_q->rayleigh_wn[n] = 2.0*M_PI*_fd*cos(2.0*M_PI*(n+1)/(4*_M+2));
+	}
 }
 
 // apply carrier offset impairment
@@ -284,6 +336,19 @@ int CHANNEL(_execute)(CHANNEL() _q,
     if (_q->enabled_carrier) {
         NCO(_mix_up)(_q->nco, r, &r);
         NCO(_step)  (_q->nco);
+    }
+
+    // apply rayleigh fading if enabled
+    if (_q->enabled_rayleigh) {
+    	float complex u = 0;
+    	for (int n=0;  n<_q->rayleigh_M; n++) {
+    		u += (_q->rayleigh_an[n]+_Complex_I*_q->rayleigh_bn[n])*cos(_q->rayleigh_wn[n]*_q->rayleigh_t/_q->rayleigh_R);
+    	}
+    	u += 1/sqrt(2)*cos(_q->rayleigh_fd*_q->rayleigh_t/_q->rayleigh_R);
+    	_q->rayleigh_t++;
+    	u *= 2*sqrt(2.0/_q->rayleigh_M);
+
+    	r *= u;
     }
 
     // apply AWGN if enabled
