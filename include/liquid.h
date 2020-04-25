@@ -8294,6 +8294,7 @@ void ofdmframesync_set_cb(ofdmframesync _q,
 void ofdmframesync_print(ofdmframesync _q);
 void ofdmframesync_reset(ofdmframesync _q);
 void ofdmframesync_reset_msequence(ofdmframesync _q);
+void ofdmframesync_reset_soft(ofdmframesync _q);
 int  ofdmframesync_is_frame_open(ofdmframesync _q);
 int  ofdmframesync_is_synced(ofdmframesync _q);
 int  ofdmframesync_find_data_start(ofdmframesync _q,
