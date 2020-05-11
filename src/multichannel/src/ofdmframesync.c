@@ -392,8 +392,6 @@ void ofdmframesync_reset_soft(ofdmframesync _q)
 {
 	msequence_reset(_q->ms_pilot);
 	_q->first_pilots_received = 0;
-	_q->p1_prime = 0;
-	_q->phi_prime = 0;
 }
 
 int ofdmframesync_is_frame_open(ofdmframesync _q)
