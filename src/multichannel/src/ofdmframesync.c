@@ -1029,9 +1029,11 @@ int ofdmframesync_rxsymbol(ofdmframesync _q)
         _q->X[i] *= _q->R[i];
 
     // polynomial curve-fit
-    float x_phase[_q->M_pilot];
+    float x_polyfit[_q->M_pilot];
     float y_phase[_q->M_pilot];
     float p_phase[2];
+    float y_gain[_q->M_pilot];
+    float p_gain[2];
 
     unsigned int n=0;
     unsigned int k;
@@ -1053,8 +1055,9 @@ int ofdmframesync_rxsymbol(ofdmframesync _q)
                     crealf(pilot),    cimagf(pilot));
 #endif
             // store resulting...
-            x_phase[n] = (k > _q->M2) ? (float)k - (float)(_q->M) : (float)k;
+            x_polyfit[n] = (k > _q->M2) ? (float)k - (float)(_q->M) : (float)k;
             y_phase[n] = cargf(_q->X[k]*conjf(pilot));
+            y_gain[n] = cabsf(_q->X[k]);
 
             // update counter
             n++;
@@ -1069,7 +1072,10 @@ int ofdmframesync_rxsymbol(ofdmframesync _q)
     liquid_unwrap_phase(y_phase, _q->M_pilot);
 
     // fit phase to 1st-order polynomial (2 coefficients)
-    polyf_fit(x_phase, y_phase, _q->M_pilot, p_phase, 2);
+    polyf_fit(x_polyfit, y_phase, _q->M_pilot, p_phase, 2);
+
+    // fit gain to 1st-order polynomial (2 coefficients)
+    polyf_fit(x_polyfit, y_gain, _q->M_pilot, p_gain, 2);
 
     // filter slope estimate (timing offset)
     float alpha = 0.3f;
@@ -1079,7 +1085,7 @@ int ofdmframesync_rxsymbol(ofdmframesync _q)
 #if DEBUG_OFDMFRAMESYNC
     if (_q->debug_enabled) {
         // save pilots
-        memmove(_q->px, x_phase, _q->M_pilot*sizeof(float));
+        memmove(_q->px, x_polyfit, _q->M_pilot*sizeof(float));
         memmove(_q->py, y_phase, _q->M_pilot*sizeof(float));
 
         // NOTE : swapping values for octave
@@ -1100,7 +1106,8 @@ int ofdmframesync_rxsymbol(ofdmframesync _q)
         } else {
             float fx    = (i > _q->M2) ? (float)i - (float)(_q->M) : (float)i;
             float theta = polyf_val(p_phase, 2, fx);
-            _q->X[i] *= liquid_cexpjf(-theta);
+            float g = polyf_val(p_gain, 2, fx);
+            _q->X[i] *= liquid_cexpjf(-theta)/g;
         }
     }
 
@@ -1108,11 +1115,11 @@ int ofdmframesync_rxsymbol(ofdmframesync _q)
     if (_q->num_symbols > 0) {
         // compute phase error (unwrapped)
         float dphi_prime = p_phase[0] - _q->phi_prime;
-        while (dphi_prime >  M_PI) dphi_prime -= M_2_PI;
-        while (dphi_prime < -M_PI) dphi_prime += M_2_PI;
+        while (dphi_prime >  M_PI) dphi_prime -= 2*M_PI;
+        while (dphi_prime < -M_PI) dphi_prime += 2*M_PI;
 
         // adjust NCO proportionally to phase error
-        nco_crcf_adjust_frequency(_q->nco_rx, 1e-3f*dphi_prime);
+        nco_crcf_adjust_frequency(_q->nco_rx, 0.1*(dphi_prime/_q->M));
     }
     // set internal phase state
     _q->phi_prime = p_phase[0];
