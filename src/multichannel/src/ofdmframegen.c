@@ -306,9 +306,9 @@ int ofdmframegen_writesymbol(ofdmframegen    _q,
 //  _q      :   framing generator object
 //  _x      :   input symbols, [size: _M x 1]
 //  _y      :   output samples, [size: _M x 1]
-void ofdmframegen_writesymbol_nopilot(ofdmframegen    _q,
-                                      float complex * _x,
-                                      float complex * _y)
+int ofdmframegen_writesymbol_nopilot(ofdmframegen    _q,
+                                     float complex * _x,
+                                     float complex * _y)
 {
     // move frequency data to internal buffer
     unsigned int i;
@@ -335,6 +335,7 @@ void ofdmframegen_writesymbol_nopilot(ofdmframegen    _q,
 
     // copy result to output, adding cyclic prefix and tapering window
     ofdmframegen_gensymbol(_q, _y);
+		return LIQUID_OK;
 }
 
 // write tail to output

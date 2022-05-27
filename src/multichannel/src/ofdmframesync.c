@@ -94,10 +94,10 @@ struct ofdmframesync_s {
     msequence ms_pilot;     // pilot sequence generator
     float phi_prime;        // ...
     float p1_prime;         // filtered pilot phase slope
-    float g_prime;			// last gain estimated from pilots
-    float g1_prime;			// last gain slope estimated from pilots
-    unsigned int first_pilots_received;	// set if pilots have been received in previous symbols
-    unsigned int last_pilot;// index of last symbol that contained pilots
+    float g_prime;          // last gain estimated from pilots
+    float g1_prime;         // last gain slope estimated from pilots
+    unsigned int first_pilots_received; // set if pilots have been received in previous symbols
+    unsigned int last_pilot;            // index of last symbol that contained pilots
 #if OFDMFRAMESYNC_ENABLE_SQUELCH
     // coarse signal detection
     float squelch_threshold;
@@ -279,15 +279,17 @@ ofdmframesync ofdmframesync_create(unsigned int           _M,
 }
 
 // Change the callback of the sync object
-void ofdmframesync_set_cb(ofdmframesync _q,
-						              ofdmframesync_callback cb,
-						              void* userdata)
+int ofdmframesync_set_cb(ofdmframesync _q,
+                         ofdmframesync_callback cb,
+                         void* userdata)
 {
 	_q->callback = cb;
 	_q->userdata = userdata;
+
+	return LIQUID_OK;
 }
 
-void ofdmframesync_destroy(ofdmframesync _q)
+int ofdmframesync_destroy(ofdmframesync _q)
 {
 #if DEBUG_OFDMFRAMESYNC
     // destroy debugging objects
@@ -379,19 +381,21 @@ int ofdmframesync_reset(ofdmframesync _q)
 
 // reset the msequence used for pilot generation
 // cfo, phase offset and sync state variables wont be changed
-void ofdmframesync_reset_msequence(ofdmframesync _q)
+int ofdmframesync_reset_msequence(ofdmframesync _q)
 {
 	msequence_reset(_q->ms_pilot);
+	return LIQUID_OK;
 }
 
 // reset ofdmframesync without resetting sync state and
 // the gathered timing parameters.
 // to be used after ofdmframesync object was not used for
 // some time.
-void ofdmframesync_reset_soft(ofdmframesync _q)
+int ofdmframesync_reset_soft(ofdmframesync _q)
 {
 	msequence_reset(_q->ms_pilot);
 	_q->first_pilots_received = 0;
+	return LIQUID_OK;
 }
 
 int ofdmframesync_is_frame_open(ofdmframesync _q)
@@ -407,8 +411,8 @@ int ofdmframesync_is_synced(ofdmframesync _q)
 // searches the sync sequence and returns a pointer to the start
 // of the first data symbol if sync was successful
 int ofdmframesync_find_data_start(ofdmframesync _q,
-                           	      float complex * _x,
-								                  unsigned int _n)
+                                  float complex * _x,
+                                  unsigned int _n)
 {
     unsigned int i;
     float complex x;
@@ -445,22 +449,24 @@ int ofdmframesync_find_data_start(ofdmframesync _q,
             ofdmframesync_execute_S1(_q);
             break;
         case OFDMFRAMESYNC_STATE_RXSYMBOLS:
-        	return i;
+            return i;
             break;
         default:;
         }
 
     } // for (i=0; i<_n; i++)
+
     // edge case if sync was achieved with the last symbol
     if (_q->state == OFDMFRAMESYNC_STATE_RXSYMBOLS)
-    	return _n;
+        return _n;
+
     // sync is not complete, return -1.
     return -1;
-} // ofdmframesync_execute()
+}
 
-void ofdmframesync_execute(ofdmframesync _q,
-                           float complex * _x,
-                           unsigned int _n)
+int ofdmframesync_execute(ofdmframesync _q,
+                          float complex *_x,
+                          unsigned int _n)
 {
     unsigned int i;
     float complex x;
@@ -504,11 +510,11 @@ void ofdmframesync_execute(ofdmframesync _q,
 
     } // for (i=0; i<_n; i++)
     return LIQUID_OK;
-} // ofdmframesync_execute()
+}
 
-void ofdmframesync_execute_nopilot(ofdmframesync _q,
-                                   float complex * _x,
-                                   unsigned int _n)
+int ofdmframesync_execute_nopilot(ofdmframesync _q,
+                                  float complex * _x,
+                                  unsigned int _n)
 {
     unsigned int i;
     float complex x;
@@ -551,6 +557,7 @@ void ofdmframesync_execute_nopilot(ofdmframesync _q,
         }
 
     } // for (i=0; i<_n; i++)
+    return LIQUID_OK;
 } // ofdmframesync_execute()
 
 // get receiver RSSI
@@ -907,7 +914,7 @@ int ofdmframesync_execute_rxsymbols(ofdmframesync _q)
     return LIQUID_OK;
 }
 
-void ofdmframesync_execute_rxsymbols_nopilot(ofdmframesync _q)
+int ofdmframesync_execute_rxsymbols_nopilot(ofdmframesync _q)
 {
     // wait for timeout
     _q->timer--;
@@ -943,7 +950,7 @@ void ofdmframesync_execute_rxsymbols_nopilot(ofdmframesync _q)
         // reset timer
         _q->timer = _q->M + _q->cp_len;
     }
-
+    return LIQUID_OK;
 }
 
 // compute S0 metrics
@@ -1310,11 +1317,12 @@ int ofdmframesync_rxsymbol(ofdmframesync _q)
         printf("x_phase(%3u) = %12.8f; y_phase(%3u) = %12.8f;\n", i+1, x_phase[i], i+1, y_phase[i]);
     printf("poly : p0=%12.8f, p1=%12.8f\n", p_phase[0], p_phase[1]);
 #endif
+    return LIQUID_OK;
 }
 
 // recover symbol, correcting for gain, pilot phase, etc. without using
 // any pilot symbols. Instead the phase estimates from the previous symbols are used.
-void ofdmframesync_rxsymbol_nopilot(ofdmframesync _q)
+int ofdmframesync_rxsymbol_nopilot(ofdmframesync _q)
 {
     // apply gain
     unsigned int i;
@@ -1349,11 +1357,6 @@ void ofdmframesync_rxsymbol_nopilot(ofdmframesync _q)
     // increment symbol counter
     _q->num_symbols++;
 
-#if 0
-    for (i=0; i<_q->M_pilot; i++)
-        printf("x_phase(%3u) = %12.8f; y_phase(%3u) = %12.8f;\n", i+1, x_phase[i], i+1, y_phase[i]);
-    printf("poly : p0=%12.8f, p1=%12.8f\n", p_phase[0], p_phase[1]);
-#endif
     return LIQUID_OK;
 }
 
@@ -1381,6 +1384,7 @@ int ofdmframesync_debug_enable(ofdmframesync _q)
     return LIQUID_OK;
 #else
     fprintf(stderr,"ofdmframesync_debug_enable(): compile-time debugging disabled\n");
+    return LIQUID_OK;
 #endif
 }
 
@@ -1392,6 +1396,7 @@ int ofdmframesync_debug_disable(ofdmframesync _q)
     return LIQUID_OK;
 #else
     fprintf(stderr,"ofdmframesync_debug_disable(): compile-time debugging disabled\n");
+    return LIQUID_OK;
 #endif
 }
 
@@ -1554,6 +1559,7 @@ int ofdmframesync_debug_print(ofdmframesync _q,
     return LIQUID_OK;
 #else
     fprintf(stderr,"ofdmframesync_debug_print(): compile-time debugging disabled\n");
+    return LIQUID_OK;
 #endif
 }
 

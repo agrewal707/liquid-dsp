@@ -57,14 +57,14 @@ struct CHANNEL(_s) {
     float           shadowing_fd;       // shadowing Doppler frequency
 
     // rayleigh flat fading
-    int enabled_rayleigh;				// enable rayleigh?
-    int rayleigh_M;						// number of scatter components
-    unsigned int rayleigh_t;			// current time index
-    float* rayleigh_an;					// cos coefficients for jakes model
-    float* rayleigh_bn;					// sin coefficients
-    float* rayleigh_wn;					// doppler shift coefficients
-    unsigned int rayleigh_R;			// sampling rate
-    unsigned int rayleigh_fd;			// max doppler shift
+    int enabled_rayleigh;               // enable rayleigh?
+    int rayleigh_M;                     // number of scatter components
+    unsigned int rayleigh_t;            // current time index
+    float* rayleigh_an;                 // cos coefficients for jakes model
+    float* rayleigh_bn;                 // sin coefficients
+    float* rayleigh_wn;                 // doppler shift coefficients
+    unsigned int rayleigh_R;            // sampling rate
+    unsigned int rayleigh_fd;           // max doppler shift
 };
 
 // create structured channel object with default parameters
@@ -177,15 +177,15 @@ int CHANNEL(_add_awgn)(CHANNEL() _q,
 // _fd				: maximum doppler shift in Hz
 // _R				: sampling rate R
 // _M				: number of scatterers (1..32) (Jakes used 8)
-void CHANNEL(_add_rayleigh_flat)(CHANNEL() _q,
-								   unsigned int _fd,
-								   unsigned int _R,
-								   unsigned int _M)
+int CHANNEL(_add_rayleigh_flat)(CHANNEL() _q,
+                                unsigned int _fd,
+                                unsigned int _R,
+                                unsigned int _M)
 {
-    if (_M > 32) {
-        fprintf(stderr,"warning: channel_%s_add_rayleigh_flat() maximum number of scatterers is 32!\n", EXTENSION_FULL);
-        _M=32;
-    }
+	if (_M > 32) {
+		fprintf(stderr,"warning: channel_%s_add_rayleigh_flat() maximum number of scatterers is 32!\n", EXTENSION_FULL);
+		_M=32;
+	}
 
 	_q->enabled_rayleigh = 1;
 
@@ -203,6 +203,7 @@ void CHANNEL(_add_rayleigh_flat)(CHANNEL() _q,
 		_q->rayleigh_bn[n] = sin(M_PI*(n+1)/(_M+1));
 		_q->rayleigh_wn[n] = 2.0*M_PI*_fd*cos(2.0*M_PI*(n+1)/(4*_M+2));
 	}
+	return LIQUID_OK;
 }
 
 // apply carrier offset impairment
@@ -340,15 +341,15 @@ int CHANNEL(_execute)(CHANNEL() _q,
 
     // apply rayleigh fading if enabled
     if (_q->enabled_rayleigh) {
-    	float complex u = 0;
-    	for (int n=0;  n<_q->rayleigh_M; n++) {
-    		u += (_q->rayleigh_an[n]+_Complex_I*_q->rayleigh_bn[n])*cos(_q->rayleigh_wn[n]*_q->rayleigh_t/_q->rayleigh_R);
-    	}
-    	u += 1/sqrt(2)*cos(_q->rayleigh_fd*_q->rayleigh_t/_q->rayleigh_R);
-    	_q->rayleigh_t++;
-    	u *= 2*sqrt(2.0/_q->rayleigh_M);
+      float complex u = 0;
+      for (int n=0;  n<_q->rayleigh_M; n++) {
+        u += (_q->rayleigh_an[n]+_Complex_I*_q->rayleigh_bn[n])*cos(_q->rayleigh_wn[n]*_q->rayleigh_t/_q->rayleigh_R);
+      }
+      u += 1/sqrt(2)*cos(_q->rayleigh_fd*_q->rayleigh_t/_q->rayleigh_R);
+      _q->rayleigh_t++;
+      u *= 2*sqrt(2.0/_q->rayleigh_M);
 
-    	r *= u;
+      r *= u;
     }
 
     // apply AWGN if enabled

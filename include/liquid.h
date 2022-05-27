@@ -680,20 +680,20 @@ int CHANNEL(_add_carrier_offset)(CHANNEL() _q,                              \
 /*  _q          : channel object                                        */  \
 /*  _h          : channel coefficients (NULL for random)                */  \
 /*  _h_len      : number of channel coefficients                        */  \
-void CHANNEL(_add_multipath)(CHANNEL()    _q,                               \
-                             TC *         _h,                               \
-                             unsigned int _h_len);                          \
-                             	 	 	 	 	 	 	 	 	 	 	 	                        \
+int CHANNEL(_add_multipath)(CHANNEL()    _q,                                \
+                            TC *         _h,                                \
+                            unsigned int _h_len);                           \
+                                                                            \
 /* Include multi-path channel impairment                                */  \
 /*  _q          : channel object                                        */  \
-/*  _M          : number of scattering components		                    */  \
-/*  _fd		      : doppler shift	in Hz					                          */  \
-/*  _R		      : sampling rate							                            */  \
-void CHANNEL(_add_rayleigh_flat)(CHANNEL()    _q,                           \
-                                 unsigned int _fd,                          \
-								                 unsigned int _R,							              \
-                                 unsigned int _M);			                    \
-                             	 	 	 	 	 	 	 	 	 	 	 	                        \
+/*  _fd         : doppler shift in Hz                                   */  \
+/*  _R          : sampling rate                                         */  \
+/*  _M          : number of scattering components                       */  \
+int CHANNEL(_add_rayleigh_flat)(CHANNEL()    _q,                            \
+                                unsigned int _fd,                           \
+                                unsigned int _R,                            \
+                                unsigned int _M);                           \
+                                                                            \
 /* Include slowly-varying shadowing impairment                          */  \
 /*  _q          : channel object                                        */  \
 /*  _sigma      : standard deviation for log-normal shadowing           */  \
@@ -8666,9 +8666,9 @@ int ofdmframegen_writesymbol(ofdmframegen _q,
                              liquid_float_complex *_y);
 
 // write data symbol, considering pilot allocation as data subcarriers
-void ofdmframegen_writesymbol_nopilot(ofdmframegen _q,
-                              liquid_float_complex * _x,
-                              liquid_float_complex *_y);
+int ofdmframegen_writesymbol_nopilot(ofdmframegen _q,
+                                     liquid_float_complex * _x,
+                                     liquid_float_complex *_y);
 
 // write tail
 int ofdmframegen_writetail(ofdmframegen _q,
@@ -8696,25 +8696,25 @@ ofdmframesync ofdmframesync_create(unsigned int           _M,
                                    unsigned char *        _p,
                                    ofdmframesync_callback _callback,
                                    void *                 _userdata);
-void ofdmframesync_destroy(ofdmframesync _q);
-void ofdmframesync_set_cb(ofdmframesync _q,
-						  ofdmframesync_callback cb,
-						  void* userdata);
-void ofdmframesync_print(ofdmframesync _q);
-void ofdmframesync_reset(ofdmframesync _q);
-void ofdmframesync_reset_msequence(ofdmframesync _q);
-void ofdmframesync_reset_soft(ofdmframesync _q);
-int  ofdmframesync_is_frame_open(ofdmframesync _q);
-int  ofdmframesync_is_synced(ofdmframesync _q);
-int  ofdmframesync_find_data_start(ofdmframesync _q,
-                           	       float complex * _x,
-								   unsigned int _n);
-void ofdmframesync_execute(ofdmframesync _q,
-                           liquid_float_complex * _x,
-                           unsigned int _n);
-void ofdmframesync_execute_nopilot(ofdmframesync _q,
-                           liquid_float_complex * _x,
-                           unsigned int _n);
+int ofdmframesync_destroy(ofdmframesync _q);
+int ofdmframesync_print(ofdmframesync _q);
+int ofdmframesync_reset(ofdmframesync _q);
+int ofdmframesync_reset_msequence(ofdmframesync _q);
+int ofdmframesync_reset_soft(ofdmframesync _q);
+int ofdmframesync_is_frame_open(ofdmframesync _q);
+int ofdmframesync_is_synced(ofdmframesync _q);
+int ofdmframesync_find_data_start(ofdmframesync _q,
+                                   liquid_float_complex * _x,
+                                   unsigned int _n);
+int ofdmframesync_execute(ofdmframesync _q,
+                          liquid_float_complex * _x,
+                          unsigned int _n);
+int ofdmframesync_execute_nopilot(ofdmframesync _q,
+                                  liquid_float_complex * _x,
+                                  unsigned int _n);
+int ofdmframesync_set_cb(ofdmframesync _q,
+                         ofdmframesync_callback cb,
+                         void* userdata);
 
 // query methods
 float ofdmframesync_get_rssi(ofdmframesync _q); // received signal strength indication
