@@ -1510,12 +1510,12 @@ int ofdmframesync_cpcorrelate(ofdmframesync _q);
 int ofdmframesync_findrxypeak(ofdmframesync _q);
 int ofdmframesync_rxpayload(ofdmframesync _q);
 
-void ofdmframesync_execute_seekplcp(ofdmframesync _q);
-void ofdmframesync_execute_S0a(ofdmframesync _q);
-void ofdmframesync_execute_S0b(ofdmframesync _q);
-void ofdmframesync_execute_S1( ofdmframesync _q);
-void ofdmframesync_execute_rxsymbols(ofdmframesync _q);
-void ofdmframesync_execute_rxsymbols_nopilot(ofdmframesync _q);
+int ofdmframesync_execute_seekplcp(ofdmframesync _q);
+int ofdmframesync_execute_S0a(ofdmframesync _q);
+int ofdmframesync_execute_S0b(ofdmframesync _q);
+int ofdmframesync_execute_S1( ofdmframesync _q);
+int ofdmframesync_execute_rxsymbols(ofdmframesync _q);
+int ofdmframesync_execute_rxsymbols_nopilot(ofdmframesync _q);
 
 int ofdmframesync_S0_metrics(ofdmframesync   _q,
                              float complex * _G,
@@ -1553,7 +1553,7 @@ int ofdmframesync_estimate_eqgain_poly(ofdmframesync _q,
 int ofdmframesync_rxsymbol(ofdmframesync _q);
 
 // recover symbol, correcting for gain, pilot phase, etc.
-void ofdmframesync_rxsymbol_nopilot(ofdmframesync _q);
+int ofdmframesync_rxsymbol_nopilot(ofdmframesync _q);
 
 // 
 // MODULE : nco (numerically-controlled oscillator)
